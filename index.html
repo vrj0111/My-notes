@@ -1,0 +1,1188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>NoteCraft 4.0 — Direct Visual A4 Note Studio</title>
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="NoteCraft" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <!-- 6 Handwriting & Print Font Pairings (English + Marathi Devanagari) -->
+  <link href="https://fonts.googleapis.com/css2?family=Amita:wght@400;700&family=Caveat:wght@600;700&family=Indie+Flower&family=Inter:wght@400;500;600;700;800&family=Kalam:wght@400;700&family=Noto+Sans+Devanagari:wght@400;600;700;800&family=Patrick+Hand&family=Shadows+Into+Light&family=Tillana:wght@500;700&display=swap" rel="stylesheet">
+  <style id="dynamicPageRule">
+    @page { size: A4 landscape; margin: 0; }
+  </style>
+  <style>
+    :root {
+      --font-size: 12.5px;
+      --line-h: 21px;
+      --cols: 3;
+      --table-scale: 0.88;
+      --table-pad: 1.5px 4px;
+      --rule-color: rgba(71, 85, 105, 0.48);
+      --col-divider: rgba(30, 41, 59, 0.55);
+      --h1-color: #9f1239;
+      --h2-color: #1e3a8a;
+      --body-color: #0f172a;
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body { background: #0f172a; color: #f8fafc; margin: 0; font-family: 'Inter', 'Noto Sans Devanagari', sans-serif; }
+    button { touch-action: manipulation; cursor: pointer; user-select: none; }
+
+    /* 6 Handwriting & Print Font Pairings (Bilingual Marathi + English) */
+    .f-kalam   { font-family: 'Kalam', 'Noto Sans Devanagari', cursive; }
+    .f-tillana { font-family: 'Patrick Hand', 'Tillana', cursive; }
+    .f-caveat  { font-family: 'Caveat', 'Kalam', cursive; }
+    .f-shadows { font-family: 'Shadows Into Light', 'Kalam', cursive; letter-spacing: 0.3px; }
+    .f-amita   { font-family: 'Amita', 'Kalam', cursive; }
+    .f-print   { font-family: 'Inter', 'Noto Sans Devanagari', sans-serif; }
+
+    /* Exact Page Dimensions (96 DPI) */
+    .page-sheet {
+      background-color: #ffffff;
+      color: var(--body-color);
+      margin: 0 auto 24px auto;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.55);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      page-break-after: always;
+      break-after: page;
+    }
+    .size-a4-landscape { width: 1122px; height: 793px; padding: 20px 26px; }
+    .size-a4-portrait  { width: 793px;  height: 1122px; padding: 24px 28px; }
+    .size-b5-landscape { width: 945px;  height: 665px;  padding: 18px 22px; }
+    .size-b5-portrait  { width: 665px;  height: 945px;  padding: 20px 24px; }
+
+    .page-header {
+      height: 22px;
+      border-bottom: 2px solid var(--h1-color);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--h1-color);
+      flex-shrink: 0;
+    }
+
+    /* Multi-Column Container */
+    .page-columns {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      column-count: var(--cols);
+      column-gap: 16px;
+      column-rule: 1.5px solid var(--col-divider);
+      column-fill: auto;
+      font-size: var(--font-size);
+      line-height: var(--line-h);
+      overflow: hidden;
+    }
+
+    /* SELF-RULED LINES: Every line carries its own ruled line locked to its bottom edge!
+       It is physically impossible for text and lines to ever drift apart in PDF or Print! */
+    .ruled-node {
+      margin: 0;
+      padding: 0 3px;
+      min-height: var(--line-h);
+      line-height: var(--line-h);
+      word-break: break-word;
+      outline: none;
+      background-image: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent calc(var(--line-h) - 1px),
+        var(--rule-color) calc(var(--line-h) - 1px),
+        var(--rule-color) var(--line-h)
+      );
+    }
+    .ruled-node:focus {
+      background-color: rgba(56, 189, 248, 0.08);
+    }
+
+    .node-h1 {
+      font-weight: 800;
+      font-size: calc(var(--font-size) * 1.12);
+      color: var(--h1-color);
+      border-left: 3.5px solid var(--h1-color);
+      background-color: rgba(159, 18, 57, 0.06);
+      padding-left: 6px;
+    }
+    .node-h2 {
+      font-weight: 800;
+      color: var(--h2-color);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+    .node-bullet {
+      padding-left: 12px;
+      text-indent: -10px;
+    }
+    .node-spacer {
+      min-height: var(--line-h);
+      line-height: var(--line-h);
+    }
+    .node-box {
+      border: 1.5px solid #1e293b;
+      background-color: #f8fafc;
+      border-radius: 4px;
+      padding: 1px 6px;
+      margin: 2px 0;
+      font-weight: 700;
+      line-height: var(--line-h);
+      outline: none;
+    }
+
+    /* Flowchart Connected Pills */
+    .node-flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 3px;
+      padding: 2px 0;
+      min-height: var(--line-h);
+      outline: none;
+    }
+    .flow-step {
+      border: 1px solid var(--h2-color);
+      background: #f1f5f9;
+      border-radius: 4px;
+      padding: 0 5px;
+      font-weight: 700;
+      font-size: calc(var(--font-size) * 0.92);
+      line-height: calc(var(--line-h) * 0.9);
+    }
+    .flow-arrow {
+      font-weight: 800;
+      color: var(--h1-color);
+      font-size: calc(var(--font-size) * 0.95);
+    }
+
+    /* 2-Column Side-by-Side Comparison Split */
+    .node-split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border: 1px solid #475569;
+      background: #ffffff;
+      margin: 2px 0;
+      font-size: calc(var(--font-size) * 0.92);
+      line-height: calc(var(--line-h) * 0.95);
+    }
+    .split-col {
+      padding: 2px 5px;
+      outline: none;
+    }
+    .split-col:first-child {
+      border-right: 1px solid #475569;
+    }
+
+    /* SPLITABLE VISUAL TABLE ROWS (Zero Vacant Space!) */
+    .t-row {
+      display: grid;
+      width: 100%;
+      border-bottom: 1px solid #475569;
+      border-left: 1px solid #475569;
+      border-right: 1px solid #475569;
+      background: #ffffff;
+      font-size: calc(var(--font-size) * var(--table-scale));
+      line-height: 1.28;
+      position: relative;
+    }
+    .t-head {
+      background: #e2e8f0;
+      color: #0f172a;
+      font-weight: 800;
+      border-top: 1.5px solid #0f172a;
+      border-bottom: 1.5px solid #0f172a;
+    }
+    .t-cell {
+      padding: var(--table-pad);
+      border-right: 1px solid #64748b;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+      outline: none;
+    }
+    .t-cell:last-child { border-right: none; }
+    .t-cell:focus { background: rgba(56, 189, 248, 0.12); }
+
+    /* Tap-to-Resize Borderless Images */
+    .img-node { position: relative; margin: 2px 0; background: transparent !important; border: none !important; }
+    .img-node.mode-float { float: left; margin: 2px 8px 2px 0; }
+    .img-node.mode-block { display: block; margin: 2px auto; }
+    .img-node.mode-span  { column-span: all; display: block; margin: 4px auto; }
+    .img-node img { display: block; width: 100%; height: auto; border: none !important; object-fit: contain; }
+    .img-controls {
+      display: none; position: absolute; top: 2px; left: 2px; z-index: 20;
+      background: rgba(15, 23, 42, 0.92); border: 1px solid #475569; border-radius: 6px; padding: 2px; gap: 2px; flex-wrap: wrap;
+    }
+    .img-node.selected .img-controls, .img-node:hover .img-controls { display: flex; }
+
+    #pagesViewport { width: 100%; overflow-x: auto; padding: 14px 8px; }
+
+    @media print {
+      body { background: #ffffff !important; }
+      header, #styleBar, #symbolBar, #notebookDrawer, .no-print, .img-controls { display: none !important; }
+      #pagesViewport { padding: 0 !important; overflow: visible !important; }
+      .page-sheet {
+        margin: 0 !important;
+        box-shadow: none !important;
+        page-break-after: always !important;
+        break-after: page !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      .page-sheet:last-child { page-break-after: auto !important; break-after: auto !important; }
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- ==================== BAR 1: CHAPTERS, INSERT TOOLS & PDF EXPORT ==================== -->
+  <header class="sticky top-0 z-30 bg-slate-950 border-b border-slate-800 px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+    <div class="flex items-center gap-2">
+      <button type="button" onclick="toggleNotebookDrawer()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 text-xs font-bold border border-slate-700">📚 Chapters</button>
+      <span class="font-extrabold text-sm text-amber-400">NoteCraft 4.0</span>
+      <span id="statusBadge" class="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-bold">Loading...</span>
+    </div>
+
+    <!-- Visual Insert Buttons (Zero Code Symbols Needed!) -->
+    <div class="flex flex-wrap items-center gap-1.5">
+      <button type="button" onclick="openModal('pasteModal')" class="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-extrabold shadow" title="Paste Raw Text & Auto-Clean">
+        📥 Smart Paste
+      </button>
+      <button type="button" onclick="openModal('tableModal')" class="px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold">+ Table</button>
+      <button type="button" onclick="insertVisualSplit()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 text-indigo-300 border border-slate-700 text-xs font-bold" title="Side-by-Side Comparison">⚖️ 2-Col Split</button>
+      <button type="button" onclick="insertVisualFlowchart()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 text-amber-300 border border-slate-700 text-xs font-bold" title="Connected Event Chain">⛓️ Flowchart</button>
+      <button type="button" onclick="insertVisualVocab()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 text-emerald-300 border border-slate-700 text-xs font-bold" title="Compact Vocab Row">🔤 +Vocab</button>
+      <button type="button" onclick="openModal('imgModal')" class="px-2.5 py-1.5 rounded-lg bg-sky-600 text-white text-xs font-bold">🖼️ +Pic</button>
+      <button type="button" onclick="insertPageBreakNode()" class="px-2.5 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-bold">📄 +New Page</button>
+      <button type="button" onclick="window.print()" class="px-2.5 py-1.5 rounded-lg bg-amber-500 text-slate-950 text-xs font-extrabold shadow" title="100% Vector Sharp iPad PDF">🖨️ Crisp PDF</button>
+      <button type="button" id="btnDownloadPdf" onclick="downloadDirectPdf()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 text-amber-300 border border-amber-500/40 text-xs font-bold">⬇ File PDF</button>
+      <button type="button" onclick="openModal('backupModal')" class="px-2 py-1.5 rounded-lg bg-slate-800 text-xs border border-slate-700">💾</button>
+    </div>
+  </header>
+
+  <!-- ==================== BAR 2: VISUAL TEXT STYLING, INK COLORS, FONTS & SIZING ==================== -->
+  <div id="styleBar" class="bg-slate-900 border-b border-slate-800 px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+    <!-- Left: Block Type & Selection Formatting (No ## or ** needed!) -->
+    <div class="flex flex-wrap items-center gap-1">
+      <button type="button" onmousedown="event.preventDefault(); setActiveBlockType('h1')" class="px-2 py-1 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-extrabold" title="Turn line into Main Heading">H1</button>
+      <button type="button" onmousedown="event.preventDefault(); setActiveBlockType('h2')" class="px-2 py-1 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 font-extrabold" title="Turn line into Subheading">H2</button>
+      <button type="button" onmousedown="event.preventDefault(); setActiveBlockType('bullet')" class="px-2 py-1 rounded bg-slate-800 text-slate-200 border border-slate-700 font-bold">• Bullet</button>
+      <button type="button" onmousedown="event.preventDefault(); setActiveBlockType('box')" class="px-2 py-1 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">▭ Box</button>
+      <button type="button" onmousedown="event.preventDefault(); setActiveBlockType('line')" class="px-2 py-1 rounded bg-slate-800 text-slate-300 border border-slate-700">Text</button>
+
+      <span class="text-slate-600 mx-0.5">|</span>
+
+      <button type="button" onmousedown="event.preventDefault(); document.execCommand('bold')" class="px-2.5 py-1 rounded bg-slate-100 text-slate-950 font-extrabold" title="Bold selected text">B</button>
+      <button type="button" onmousedown="event.preventDefault(); document.execCommand('underline')" class="px-2.5 py-1 rounded bg-slate-800 text-white underline font-bold border border-slate-700" title="Underline selected text">U</button>
+
+      <!-- 5 Pen Ink Colors for Selected Text -->
+      <div class="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800 ml-1">
+        <span class="text-[10px] text-slate-400 font-bold">Ink:</span>
+        <button type="button" onmousedown="event.preventDefault(); applyTextColor('#0f172a')" class="w-4 h-4 rounded-full bg-slate-950 border border-white" title="Black Pen"></button>
+        <button type="button" onmousedown="event.preventDefault(); applyTextColor('#1d4ed8')" class="w-4 h-4 rounded-full bg-blue-700" title="Blue Pen"></button>
+        <button type="button" onmousedown="event.preventDefault(); applyTextColor('#b91c1c')" class="w-4 h-4 rounded-full bg-red-700" title="Red Pen"></button>
+        <button type="button" onmousedown="event.preventDefault(); applyTextColor('#047857')" class="w-4 h-4 rounded-full bg-emerald-700" title="Green Pen"></button>
+        <button type="button" onmousedown="event.preventDefault(); applyTextColor('#6d28d9')" class="w-4 h-4 rounded-full bg-violet-700" title="Purple Pen"></button>
+      </div>
+
+      <!-- Global Header & Body Color Pickers -->
+      <div class="flex items-center gap-1 bg-slate-950 px-2 py-0.5 rounded-lg border border-slate-800">
+        <span class="text-[10px] text-slate-400">H1</span>
+        <input type="color" id="h1ColorPicker" value="#9f1239" onchange="applyLayoutSettings()" class="w-4 h-4 bg-transparent border-0 cursor-pointer" />
+        <span class="text-[10px] text-slate-400 ml-1">H2</span>
+        <input type="color" id="h2ColorPicker" value="#1e3a8a" onchange="applyLayoutSettings()" class="w-4 h-4 bg-transparent border-0 cursor-pointer" />
+      </div>
+    </div>
+
+    <!-- Right: Page Size, Columns, Font Family & [A-] [A+] Sizing -->
+    <div class="flex flex-wrap items-center gap-1.5">
+      <select id="pageSizeSelect" onchange="applyLayoutSettings()" class="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-white font-bold outline-none">
+        <option value="a4-landscape" selected>A4 Landscape</option>
+        <option value="a4-portrait">A4 Portrait</option>
+        <option value="b5-landscape">B5 Landscape</option>
+        <option value="b5-portrait">B5 Portrait</option>
+      </select>
+
+      <select id="colSelect" onchange="applyLayoutSettings()" class="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-white font-bold outline-none">
+        <option value="1">1 Col</option>
+        <option value="2">2 Cols</option>
+        <option value="3" selected>3 Cols</option>
+        <option value="4">4 Cols</option>
+      </select>
+
+      <!-- 6 Handwriting Fonts -->
+      <select id="fontFamilySelect" onchange="applyLayoutSettings()" class="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-amber-300 font-bold outline-none">
+        <option value="f-kalam" selected>✍️ Kalam Topper Hand</option>
+        <option value="f-tillana">✍️ Tillana + Patrick Hand</option>
+        <option value="f-caveat">✍️ Caveat Cursive Pen</option>
+        <option value="f-shadows">✍️ Shadows Tall Neat</option>
+        <option value="f-amita">✍️ Amita Calligraphic</option>
+        <option value="f-print">📖 Crisp Textbook Print</option>
+      </select>
+
+      <!-- Font [A-] [A+] -->
+      <div class="flex items-center gap-1 bg-slate-950 px-1.5 py-0.5 rounded-lg border border-slate-800">
+        <button type="button" onclick="stepFontSize(-0.5)" class="px-1.5 py-0.5 rounded bg-slate-800 text-white font-extrabold">A−</button>
+        <span id="fontSizeLabel" class="font-mono text-amber-400 font-bold px-1">12.5</span>
+        <button type="button" onclick="stepFontSize(0.5)" class="px-1.5 py-0.5 rounded bg-slate-800 text-white font-extrabold">A+</button>
+      </div>
+
+      <!-- Line Height [-] [+] -->
+      <div class="flex items-center gap-1 bg-slate-950 px-1.5 py-0.5 rounded-lg border border-slate-800">
+        <span class="text-[10px] text-slate-400">Line:</span>
+        <button type="button" onclick="stepLineGap(-1)" class="px-1.5 py-0.5 rounded bg-slate-800 text-white font-bold">−</button>
+        <span id="lineHeightLabel" class="font-mono text-indigo-300 font-bold px-0.5">21</span>
+        <button type="button" onclick="stepLineGap(1)" class="px-1.5 py-0.5 rounded bg-slate-800 text-white font-bold">+</button>
+      </div>
+
+      <!-- Table Compactness -->
+      <select id="tableDensitySelect" onchange="applyLayoutSettings()" class="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-white font-bold outline-none">
+        <option value="micro">📊 Table: Tight</option>
+        <option value="compact" selected>📊 Table: Compact</option>
+        <option value="normal">📊 Table: Normal</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- ==================== BAR 3: 1-TAP SYMBOLS, ARROWS, BULLETS & SPACE BAR ==================== -->
+  <div id="symbolBar" class="bg-slate-950/90 border-b border-slate-800 px-3 py-1.5 flex items-center justify-between gap-2 overflow-x-auto text-xs">
+    <div class="flex items-center gap-1 shrink-0">
+      <button type="button" onmousedown="event.preventDefault(); insertSpacerLine()" class="px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-extrabold" title="Add Blank Ruled Space Line">↵ +Space Line</button>
+      <button type="button" onmousedown="event.preventDefault(); deleteActiveLine()" class="px-2 py-1 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold" title="Delete Current Line">🗑 Line</button>
+      <span class="text-slate-600 mx-1">|</span>
+      <span class="text-[10px] text-slate-400 font-bold mr-1">Symbols:</span>
+      <!-- Arrows -->
+      <button type="button" onmousedown="event.preventDefault(); insertSymbolAtCursor(' → ')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold">→</button>
+      <button type="button" onmousedown="event.preventDefault(); insertSymbolAtCursor(' ⇒ ')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold">⇒</button>
+      <button type="button" onmousedown="event.preventDefault(); insertSymbolAtCursor(' ↔ ')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold">↔</button>
+      <button type="button" onmousedown="event.preventDefault(); insertSymbolAtCursor(' ↳ ')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold">↳</button>
+      <button type="button" onmousedown="event.preventDefault(); insertSymbolAtCursor(' ↑ ')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold">↑</button>
+      <button type="button" onmousedown="event.preventDefault(); insertSymbolAtCursor(' ↓ ')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold">↓</button>
+      <!-- Bullets & Markers -->
+      <button type="button" onmousedown="event.preventDefault(); insertSymbolAtCursor('• ')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-white font-bold">•</button>
+      <button type="button" onmousedown="event.preventDefault(); insertSymbolAtCursor('▪ ')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-white font-bold">▪</button>
+      <button type="button" onmousedown="event.preventDefault(); insertSymbolAtCursor('▸ ')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-white font-bold">▸</button>
+      <button type="button" onmousedown="event.preventDefault(); insertSymbolAtCursor('★ ')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold">★</button>
+      <button type="button" onmousedown="event.preventDefault(); insertSymbolAtCursor('✓ ')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold">✓</button>
+      <button type="button" onmousedown="event.preventDefault(); insertSymbolAtCursor('✗ ')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-rose-400 font-bold">✗</button>
+      <button type="button" onmousedown="event.preventDefault(); insertSymbolAtCursor('(+) ')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-indigo-300 font-bold">(+)</button>
+      <button type="button" onmousedown="event.preventDefault(); insertSymbolAtCursor('[PYQ] ')" class="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 font-bold">[PYQ]</button>
+      <button type="button" onmousedown="event.preventDefault(); insertSymbolAtCursor('[IMP] ')" class="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-bold">[IMP]</button>
+    </div>
+
+    <div class="flex items-center gap-2 shrink-0">
+      <button type="button" onclick="renderPaginatedA4Sheets()" class="px-2.5 py-0.5 rounded bg-indigo-600 text-white font-bold" title="Re-balance columns across A4 pages">⚡ Re-Flow Pages</button>
+      <span id="pageCountIndicator" class="text-[11px] font-extrabold text-indigo-300">1 Page</span>
+    </div>
+  </div>
+
+  <!-- CHAPTERS DRAWER (LEFT) -->
+  <div id="notebookDrawer" class="fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 border-r border-slate-800 p-4 transform -translate-x-full transition-transform duration-300 flex flex-col justify-between">
+    <div>
+      <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-800">
+        <span class="font-extrabold text-sm">📚 My Note Chapters</span>
+        <button type="button" onclick="toggleNotebookDrawer()" class="px-2 py-1 rounded bg-slate-800 text-xs">✕</button>
+      </div>
+      <div class="flex gap-1.5 mb-3">
+        <button type="button" onclick="createNewDoc()" class="flex-1 py-2 rounded-lg bg-indigo-600 text-white text-xs font-bold">+ New Chapter</button>
+        <button type="button" onclick="renameCurrentDoc()" class="px-2.5 py-2 rounded-lg bg-slate-800 text-xs">✎</button>
+        <button type="button" onclick="deleteCurrentDoc()" class="px-2.5 py-2 rounded-lg bg-rose-500/20 text-rose-400 text-xs">🗑</button>
+      </div>
+      <div id="docList" class="space-y-1.5"></div>
+    </div>
+  </div>
+
+  <!-- MAIN INTERACTIVE A4 VIEWPORT (TAP DIRECTLY ON ANY LINE OR TABLE CELL TO EDIT!) -->
+  <div id="pagesViewport" class="flex-1" onclick="clearSelectedImages()">
+    <div id="a4PagesContainer"></div>
+  </div>
+
+  <!-- Offscreen Measurement Stage -->
+  <div id="measureStage" style="position:fixed; left:-9999px; top:0; visibility:hidden; pointer-events:none;"></div>
+
+  <!-- MODAL 1: SMART PASTE (AUTO-CLEANS ##, **, | INTO VISUAL NOTES!) -->
+  <div id="pasteModal" class="fixed inset-0 z-50 hidden bg-black/80 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-5 space-y-3">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-bold text-emerald-400">📥 Smart Paste (Auto-Formats Your Text)</h3>
+        <button type="button" onclick="closeModal('pasteModal')" class="text-slate-400">✕</button>
+      </div>
+      <p class="text-xs text-slate-300">Paste any raw notes below. The app automatically removes any <code>**</code> or <code>##</code> symbols, bolds labels before colons (<code>Key People:</code>), and builds tables!</p>
+      <textarea id="smartPasteInput" rows="7" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white outline-none" placeholder="Paste your History, Polity, or Vocabulary text here..."></textarea>
+      <div class="flex justify-between items-center pt-1">
+        <label class="flex items-center gap-1.5 text-xs text-slate-300">
+          <input type="checkbox" id="pasteReplaceCheck" /> Replace entire chapter
+        </label>
+        <div class="flex gap-2">
+          <button type="button" onclick="closeModal('pasteModal')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs">Cancel</button>
+          <button type="button" onclick="processSmartPaste()" class="px-5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-extrabold">⚡ Insert Clean Notes</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 2: VISUAL TABLE CREATOR -->
+  <div id="tableModal" class="fixed inset-0 z-50 hidden bg-black/80 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-5 space-y-3">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-bold text-indigo-400">📊 Insert Editable Table</h3>
+        <button type="button" onclick="closeModal('tableModal')" class="text-slate-400">✕</button>
+      </div>
+      <div class="grid grid-cols-2 gap-3 text-xs">
+        <div>
+          <label class="block text-slate-400 mb-1">Columns:</label>
+          <select id="newTableCols" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white font-bold">
+            <option value="2">2 Columns (Word | Meaning)</option>
+            <option value="3">3 Columns (Year | Event | Person)</option>
+            <option value="4" selected>4 Columns (No. | State | Year | Details)</option>
+            <option value="5">5 Columns</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-slate-400 mb-1">Starting Rows:</label>
+          <select id="newTableRows" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white font-bold">
+            <option value="3">3 Rows</option>
+            <option value="5" selected>5 Rows</option>
+            <option value="8">8 Rows</option>
+          </select>
+        </div>
+      </div>
+      <p class="text-[11px] text-slate-400">Once inserted, just tap inside any cell on the page to type!</p>
+      <div class="flex justify-end gap-2">
+        <button type="button" onclick="closeModal('tableModal')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs">Cancel</button>
+        <button type="button" onclick="insertVisualTableGrid()" class="px-5 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold">Create Table on Page</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 3: INSERT PICTURE -->
+  <div id="imgModal" class="fixed inset-0 z-50 hidden bg-black/80 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-5 space-y-3">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-bold text-sky-400">🖼️ Insert Resizable Picture</h3>
+        <button type="button" onclick="closeModal('imgModal')" class="text-slate-400">✕</button>
+      </div>
+      <div class="grid grid-cols-2 gap-2 text-xs">
+        <div>
+          <label class="block text-slate-400 mb-1">Text Flow:</label>
+          <select id="imgLayoutSelect" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-white">
+            <option value="float" selected>◧ Small (Text Beside)</option>
+            <option value="block">⬜ Block (Text Below)</option>
+            <option value="span">↔ Wide (Span Columns)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-slate-400 mb-1">Width:</label>
+          <select id="imgWidthSelect" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-white">
+            <option value="35">35% (Small)</option>
+            <option value="45" selected>45% (Medium)</option>
+            <option value="75">75% (Large)</option>
+            <option value="95">95% (Full Column)</option>
+          </select>
+        </div>
+      </div>
+      <input type="file" id="imgFileInput" accept="image/*" onchange="handleImgUpload(event)" class="block w-full text-xs text-slate-300" />
+      <img id="imgUploadPreview" class="hidden max-h-36 mx-auto object-contain rounded" alt="" />
+      <div class="flex justify-end gap-2">
+        <button type="button" onclick="closeModal('imgModal')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs">Cancel</button>
+        <button type="button" onclick="insertImageBlock()" class="px-5 py-2 rounded-xl bg-sky-600 text-white text-xs font-bold">Insert Picture</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 4: BACKUP -->
+  <div id="backupModal" class="fixed inset-0 z-50 hidden bg-black/80 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-bold">💾 Backup & Restore Notes</h3>
+        <button type="button" onclick="closeModal('backupModal')" class="text-slate-400">✕</button>
+      </div>
+      <button type="button" onclick="exportBackup()" class="w-full py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold">⬇ Download Backup (.json)</button>
+      <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+        <span class="text-xs font-bold text-indigo-400 block">Restore Backup:</span>
+        <input type="file" accept=".json" onchange="importBackup(event)" class="block w-full text-xs text-slate-300" />
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'notecraft_v4_visual_data';
+
+    const PAGE_SIZES = {
+      'a4-landscape': { w: 1122, h: 793, orient: 'landscape', css: 'A4 landscape' },
+      'a4-portrait':  { w: 793,  h: 1122, orient: 'portrait',  css: 'A4 portrait' },
+      'b5-landscape': { w: 945,  h: 665, orient: 'landscape', css: 'B5 landscape' },
+      'b5-portrait':  { w: 665,  h: 945, orient: 'portrait',  css: 'B5 portrait' }
+    };
+
+    // Helper to convert raw lines into structured visual blocks
+    function convertRawTextToBlocks(rawText) {
+      const lines = (rawText || '').split('\n');
+      const blocks = [];
+      let i = 0;
+
+      const cleanInlineHtml = (str) => {
+        let s = String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        s = s.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+        s = s.replace(/==([^=]+)==/g, '<b>$1</b>');
+        s = s.replace(/__([^_]+)__/g, '<u>$1</u>');
+        s = s.replace(/^([^:&lt;]{2,32}:)\s*/, '<b>$1</b> ');
+        return s;
+      };
+
+      while (i < lines.length) {
+        const rawLine = lines[i];
+        const line = rawLine.trim();
+
+        // Keep blank lines as real ruled spacers!
+        if (!line) {
+          blocks.push({ id: 'b-' + Date.now() + '-' + i, type: 'spacer', html: '&nbsp;' });
+          i++; continue;
+        }
+        if (line.toLowerCase() === '[newpage]' || line === '===') {
+          blocks.push({ id: 'b-' + Date.now() + '-' + i, type: 'pagebreak' });
+          i++; continue;
+        }
+        // Table rows
+        if (line.includes('|') && !line.startsWith('[box]')) {
+          const tRows = [];
+          while (i < lines.length && lines[i].includes('|') && !lines[i].trim().startsWith('[box]')) {
+            const cells = lines[i].split('|').map(c => cleanInlineHtml(c.trim()));
+            if (cells.length >= 2) tRows.push(cells);
+            i++;
+          }
+          if (tRows.length) {
+            const weights = tRows[0].map((_, cIdx) => {
+              const maxL = Math.max(...tRows.map(r => (r[cIdx] || '').replace(/<[^>]+>/g, '').length));
+              return maxL <= 4 ? '0.42fr' : (maxL <= 9 ? '0.68fr' : (maxL <= 18 ? '1.15fr' : '2fr'));
+            }).join(' ');
+            tRows.forEach((cells, rIdx) => {
+              blocks.push({ id: `tr-${Date.now()}-${i}-${rIdx}`, type: rIdx === 0 ? 'thead' : 'trow', cols: weights, cells });
+            });
+            continue;
+          }
+        }
+        // Flowchart chain (if line contains -> or ➔)
+        if (line.includes('->') || line.includes('➔')) {
+          const steps = line.split(/->|➔/).map(s => cleanInlineHtml(s.trim())).filter(Boolean);
+          blocks.push({ id: 'fl-' + Date.now() + '-' + i, type: 'flow', steps });
+          i++; continue;
+        }
+        if (line.startsWith('[box]')) {
+          const inner = line.replace(/^[box]/i, '').replace(/\[\/box\]$/i, '').trim();
+          blocks.push({ id: 'bx-' + Date.now() + '-' + i, type: 'box', html: cleanInlineHtml(inner) });
+          i++; continue;
+        }
+        if (line.startsWith('# ')) {
+          blocks.push({ id: 'h1-' + Date.now() + '-' + i, type: 'h1', html: cleanInlineHtml(line.slice(2).trim()) });
+        } else if (line.startsWith('## ')) {
+          blocks.push({ id: 'h2-' + Date.now() + '-' + i, type: 'h2', html: cleanInlineHtml(line.slice(3).trim()) });
+        } else if (line.startsWith('- ') || line.startsWith('• ')) {
+          blocks.push({ id: 'bu-' + Date.now() + '-' + i, type: 'bullet', html: '• ' + cleanInlineHtml(line.slice(2).trim()) });
+        } else {
+          blocks.push({ id: 'ln-' + Date.now() + '-' + i, type: 'line', html: cleanInlineHtml(line) });
+        }
+        i++;
+      }
+      return blocks;
+    }
+
+    const STARTER_RAW = `# Doctrine of Lapse: 1848-1856 (Peak Period)
+Key People: Governor General **Lord Dalhousie** (Mainly responsible). Note: Lord Auckland also used it earlier.
+Core Objective: नैसर्गिक वारस नसलेल्या राज्यांचा दत्तक घेण्याचा अधिकार नाकारून ती राज्ये **British Empire** मध्ये विलीन करणे.
+The Old Rule: भारतीयांना धार्मिक विधींसाठी दत्तक घेण्याचा अधिकार होता. राजाला फक्त सर्वोच्च सत्तेला कळवावे लागे (inform).
+## Dalhousie's 3 Categories of States
+- 1. Independent States: दत्तक प्रक्रियेत ब्रिटिश हस्तक्षेप नाही.
+- 2. Tributary States: दत्तक घेण्यासाठी ब्रिटिश परवानगी आवश्यक. दत्तक पुत्राला फक्त खाजगी संपत्ती मिळेल, **throne (सत्ता) नाही**.
+- 3. Created/Revived by British: दत्तक वारसा पूर्णपणे नामंजूर.
+[box] Shortcut (Annexed States): **सा जैसे ओबउझानाकअ** [/box]
+No. | State | Year | Significance & Shortcut
+1 | Satara | 1848 | 1st state annexed (सा)
+2 | Jaitpur, Sambalpur, Orchha | 1849 | Rapid succession (जै, सं, ओ)
+3 | Baghat | 1850 | Hill state annexed (ब)
+4 | Udaipur | 1852 | Reversed by Canning (उ)
+5 | Jhansi | 1853 | Damodar Rao rejected (झा)
+6 | Nagpur | 1854 | Royal property auctioned (ना)
+7 | Karauli | 1855 | Disallowed by Directors (क)
+8 | Awadh | 1856 | Annexed for **misgovernance** (अ)
+# Subsidiary Alliance System (1798)
+Key People: **Lord Wellesley** (Originated by French Gov **Dupleix**; used earlier by Clive & Cornwallis).
+Core Objective: प्रत्यक्ष युद्ध न करता EIC ला भारतातील सर्वोच्च राजकीय व लष्करी सत्ता बनवणे.
+- Foreign Policy: EIC च्या नियंत्रणात. राजांना इतरांशी थेट बोलणी/युद्ध करता येणार नाही.
+- British Resident: राजधानीत permanently एक **British Resident** राहील.
+[box] Shortcut (Subsidiary Alliance): **है म्है तं अपे भो शि** [/box]
+No. | State / Ruler | Year | Details & Shortcut
+1 | Awadh (Early) | 1765 | Resident placed for money
+2 | Hyderabad | 1798 | First formal acceptance (है)
+3 | Mysore & Tanjore | 1799 | After Tipu Sultan's defeat (म्है, तं)
+4 | Awadh (Formal) | 1801 | Full alliance under Wellesley (अ)
+5 | Peshwa | 1802 | **Treaty of Bassein (वसईचा तह)** (पे)
+6 | Bhosale & Shinde | 1803-04 | Maratha powers under EIC (भो, शि)
+# Rowlatt Satyagraha Chronology (1919)
+Feb 6, 1919: Black Bill Introduced ➔ Mar 1, 1919: Satyagraha Sabha (Mumbai) ➔ Apr 6, 1919: Black Sunday (Girgaon) ➔ Apr 9, 1919: Gandhiji Arrested at Palwal`;
+
+    let state = {
+      settings: {
+        pageSize: 'a4-landscape',
+        cols: '3',
+        fontSize: 12.5,
+        lineHeight: 21,
+        tableDensity: 'compact',
+        fontFamily: 'f-kalam',
+        h1Color: '#9f1239',
+        h2Color: '#1e3a8a'
+      },
+      images: {},
+      docs: [{ id: 'doc-1', title: 'Modern History: Doctrine of Lapse, Subsidiary Alliance & Rowlatt Act', blocks: convertRawTextToBlocks(STARTER_RAW) }]
+    };
+
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+      if (saved && Array.isArray(saved.docs) && saved.docs.length) state = saved;
+    } catch (e) {}
+
+    let activeDocId = state.docs[0].id;
+    let activeBlockId = state.docs[0].blocks[0]?.id || null;
+    let pendingImgData = null;
+
+    function saveState() {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+    }
+    function escapeHtml(s) {
+      return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function getActiveDoc() {
+      return state.docs.find(d => d.id === activeDocId) || state.docs[0];
+    }
+
+    // ==================== RENDER SINGLE VISUAL BLOCK TO HTML ====================
+    function renderBlockToHtml(b) {
+      if (b.type === 'h1') {
+        return `<div data-id="${b.id}" contenteditable="true" onfocus="activeBlockId='${b.id}'" oninput="syncBlockHtml('${b.id}', this)" onkeydown="handleBlockKey(event, '${b.id}')" class="ruled-node node-h1">${b.html}</div>`;
+      }
+      if (b.type === 'h2') {
+        return `<div data-id="${b.id}" contenteditable="true" onfocus="activeBlockId='${b.id}'" oninput="syncBlockHtml('${b.id}', this)" onkeydown="handleBlockKey(event, '${b.id}')" class="ruled-node node-h2">${b.html}</div>`;
+      }
+      if (b.type === 'bullet') {
+        return `<div data-id="${b.id}" contenteditable="true" onfocus="activeBlockId='${b.id}'" oninput="syncBlockHtml('${b.id}', this)" onkeydown="handleBlockKey(event, '${b.id}')" class="ruled-node node-bullet">${b.html}</div>`;
+      }
+      if (b.type === 'spacer') {
+        return `<div data-id="${b.id}" contenteditable="true" onfocus="activeBlockId='${b.id}'" oninput="syncBlockHtml('${b.id}', this)" onkeydown="handleBlockKey(event, '${b.id}')" class="ruled-node node-spacer">${b.html || '&nbsp;'}</div>`;
+      }
+      if (b.type === 'box') {
+        return `<div data-id="${b.id}" contenteditable="true" onfocus="activeBlockId='${b.id}'" oninput="syncBlockHtml('${b.id}', this)" onkeydown="handleBlockKey(event, '${b.id}')" class="node-box">${b.html}</div>`;
+      }
+      if (b.type === 'flow') {
+        const stepsHtml = (b.steps || []).map((st, idx) =>
+          `<span contenteditable="true" onfocus="activeBlockId='${b.id}'" oninput="syncFlowStep('${b.id}', ${idx}, this)" class="flow-step">${st}</span>` +
+          (idx < b.steps.length - 1 ? `<span class="flow-arrow">➔</span>` : '')
+        ).join('');
+        return `<div data-id="${b.id}" class="node-flow">${stepsHtml}</div>`;
+      }
+      if (b.type === 'split') {
+        return `<div data-id="${b.id}" class="node-split">
+          <div contenteditable="true" onfocus="activeBlockId='${b.id}'" oninput="syncSplitCol('${b.id}', 0, this)" class="split-col">${b.left || '<b>Left Column</b><br>• Point 1'}</div>
+          <div contenteditable="true" onfocus="activeBlockId='${b.id}'" oninput="syncSplitCol('${b.id}', 1, this)" class="split-col">${b.right || '<b>Right Column</b><br>• Point 1'}</div>
+        </div>`;
+      }
+      if (b.type === 'thead' || b.type === 'trow') {
+        const cls = b.type === 'thead' ? 't-row t-head' : 't-row';
+        const cols = b.cols || `repeat(${b.cells.length}, minmax(0, 1fr))`;
+        const cellsHtml = b.cells.map((c, cIdx) =>
+          `<div contenteditable="true" onfocus="activeBlockId='${b.id}'" oninput="syncTableCell('${b.id}', ${cIdx}, this)" onkeydown="handleTableCellKey(event, '${b.id}', ${cIdx})" class="t-cell ${cIdx === 0 ? 'font-bold' : ''}">${c}</div>`
+        ).join('');
+        return `<div data-id="${b.id}" class="${cls}" style="grid-template-columns:${cols}">${cellsHtml}</div>`;
+      }
+      if (b.type === 'img') {
+        const src = state.images && state.images[b.imgId];
+        if (!src) return '';
+        const w = b.width || 45;
+        const m = b.mode || 'float';
+        return `<div data-id="${b.id}" class="img-node mode-${m}" style="width:${w}%" onclick="selectImageNode(event, this)">
+          <div class="img-controls" onclick="event.stopPropagation()">
+            <button type="button" onclick="resizeImgBlock('${b.id}', '${m}', ${w - 10})" class="px-1.5 py-0.5 rounded bg-slate-800 text-white text-[10px] font-bold">➖</button>
+            <span class="text-[10px] text-amber-300 font-mono px-1">${w}%</span>
+            <button type="button" onclick="resizeImgBlock('${b.id}', '${m}', ${w + 10})" class="px-1.5 py-0.5 rounded bg-slate-800 text-white text-[10px] font-bold">➕</button>
+            <button type="button" onclick="resizeImgBlock('${b.id}', 'float', ${w})" class="px-1.5 py-0.5 rounded ${m === 'float' ? 'bg-sky-600' : 'bg-slate-800'} text-white text-[10px] font-bold">◧ Beside</button>
+            <button type="button" onclick="resizeImgBlock('${b.id}', 'block', ${w})" class="px-1.5 py-0.5 rounded ${m === 'block' ? 'bg-sky-600' : 'bg-slate-800'} text-white text-[10px] font-bold">⬜ Below</button>
+            <button type="button" onclick="deleteBlockById('${b.id}')" class="px-1.5 py-0.5 rounded bg-rose-600 text-white text-[10px] font-bold">🗑</button>
+          </div>
+          <img src="${src}" alt="" />
+        </div>`;
+      }
+      return `<div data-id="${b.id}" contenteditable="true" onfocus="activeBlockId='${b.id}'" oninput="syncBlockHtml('${b.id}', this)" onkeydown="handleBlockKey(event, '${b.id}')" class="ruled-node">${b.html}</div>`;
+    }
+
+    // ==================== PAGINATE & RENDER A4 SHEETS ====================
+    function renderPaginatedA4Sheets(focusBlockId = null) {
+      const s = state.settings;
+      const doc = getActiveDoc();
+      const sizeClass = `size-${s.pageSize || 'a4-landscape'}`;
+
+      const stage = document.getElementById('measureStage');
+      stage.innerHTML = `<div class="page-sheet ${sizeClass} ${s.fontFamily}"><div class="page-header"><span>H</span><span>1</span></div><div id="measureCols" class="page-columns"></div></div>`;
+      const measureCols = document.getElementById('measureCols');
+      const bodyW = measureCols.clientWidth;
+
+      const pagesHtml = [];
+      let currentNodes = [];
+
+      doc.blocks.forEach(b => {
+        if (b.type === 'pagebreak') {
+          pagesHtml.push(currentNodes.join(''));
+          currentNodes = [];
+          measureCols.innerHTML = '';
+          return;
+        }
+        const bHtml = renderBlockToHtml(b);
+        currentNodes.push(bHtml);
+        measureCols.innerHTML = currentNodes.join('');
+
+        if (measureCols.scrollWidth > bodyW + 6 && currentNodes.length > 1) {
+          currentNodes.pop();
+          pagesHtml.push(currentNodes.join(''));
+          currentNodes = [bHtml];
+          measureCols.innerHTML = currentNodes.join('');
+        }
+      });
+
+      if (currentNodes.length > 0 || pagesHtml.length === 0) {
+        pagesHtml.push(currentNodes.join(''));
+      }
+
+      const container = document.getElementById('a4PagesContainer');
+      container.innerHTML = pagesHtml.map((pageBody, idx) => `
+        <section class="page-sheet ${sizeClass} ${s.fontFamily}">
+          <div class="page-header">
+            <span>📌 ${escapeHtml(doc.title)}</span>
+            <span>Page ${idx + 1} of ${pagesHtml.length}</span>
+          </div>
+          <div class="page-columns">${pageBody}</div>
+        </section>
+      `).join('');
+
+      document.getElementById('pageCountIndicator').textContent = `${pagesHtml.length} Page${pagesHtml.length > 1 ? 's' : ''}`;
+      stage.innerHTML = '';
+
+      if (focusBlockId) {
+        const targetEl = document.querySelector(`[data-id="${focusBlockId}"]`);
+        if (targetEl) {
+          targetEl.focus();
+          const range = document.createRange();
+          range.selectNodeContents(targetEl);
+          range.collapse(false);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      }
+    }
+
+    // ==================== DIRECT ON-PAGE EDITING HANDLERS ====================
+    function syncBlockHtml(id, el) {
+      const b = getActiveDoc().blocks.find(x => x.id === id);
+      if (b) {
+        b.html = el.innerHTML;
+        if (b.type === 'spacer' && el.textContent.trim() !== '') {
+          b.type = 'line';
+        }
+        saveState();
+      }
+    }
+    function syncFlowStep(id, idx, el) {
+      const b = getActiveDoc().blocks.find(x => x.id === id);
+      if (b && b.steps) { b.steps[idx] = el.innerHTML; saveState(); }
+    }
+    function syncSplitCol(id, colIdx, el) {
+      const b = getActiveDoc().blocks.find(x => x.id === id);
+      if (b) {
+        if (colIdx === 0) b.left = el.innerHTML;
+        else b.right = el.innerHTML;
+        saveState();
+      }
+    }
+    function syncTableCell(id, cIdx, el) {
+      const b = getActiveDoc().blocks.find(x => x.id === id);
+      if (b && b.cells) { b.cells[cIdx] = el.innerHTML; saveState(); }
+    }
+
+    // Pressing Enter inside any line on the page creates a new line (or blank space) right below it!
+    function handleBlockKey(event, id) {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        const blocks = getActiveDoc().blocks;
+        const idx = blocks.findIndex(x => x.id === id);
+        if (idx === -1) return;
+        const curr = blocks[idx];
+        const newId = 'ln-' + Date.now();
+        const nextType = curr.type === 'bullet' ? 'bullet' : 'line';
+        const nextHtml = nextType === 'bullet' ? '• ' : '&nbsp;';
+        blocks.splice(idx + 1, 0, { id: newId, type: nextType, html: nextHtml });
+        activeBlockId = newId;
+        saveState();
+        renderPaginatedA4Sheets(newId);
+      } else if (event.key === 'Backspace') {
+        const el = event.currentTarget;
+        const text = el.textContent.replace(/\u00a0/g, '').trim();
+        if (text === '' || text === '•') {
+          const blocks = getActiveDoc().blocks;
+          if (blocks.length <= 1) return;
+          event.preventDefault();
+          const idx = blocks.findIndex(x => x.id === id);
+          if (idx > 0) {
+            const prevId = blocks[idx - 1].id;
+            blocks.splice(idx, 1);
+            activeBlockId = prevId;
+            saveState();
+            renderPaginatedA4Sheets(prevId);
+          }
+        }
+      }
+    }
+
+    // Pressing Enter in the last cell of a table row adds a new table row automatically!
+    function handleTableCellKey(event, id, cIdx) {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        const blocks = getActiveDoc().blocks;
+        const idx = blocks.findIndex(x => x.id === id);
+        if (idx === -1) return;
+        const curr = blocks[idx];
+        const newId = 'tr-' + Date.now();
+        const emptyCells = curr.cells.map((_, i) => i === 0 ? String(idx + 1) : '');
+        blocks.splice(idx + 1, 0, { id: newId, type: 'trow', cols: curr.cols, cells: emptyCells });
+        saveState();
+        renderPaginatedA4Sheets(newId);
+      }
+    }
+
+    // ==================== VISUAL TOOLBAR ACTIONS (NO CODE SYMBOLS!) ====================
+    function setActiveBlockType(newType) {
+      const blocks = getActiveDoc().blocks;
+      let b = blocks.find(x => x.id === activeBlockId);
+      if (!b) b = blocks[blocks.length - 1];
+      if (!b || b.type === 'thead' || b.type === 'trow' || b.type === 'img') return;
+
+      b.type = newType;
+      if (newType === 'bullet' && !b.html.trim().startsWith('•')) {
+        b.html = '• ' + b.html.replace(/^&nbsp;/, '');
+      }
+      saveState();
+      renderPaginatedA4Sheets(b.id);
+    }
+
+    function applyTextColor(hexColor) {
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) {
+        document.execCommand('foreColor', false, hexColor);
+      } else if (activeBlockId) {
+        const el = document.querySelector(`[data-id="${activeBlockId}"]`);
+        if (el) {
+          el.style.color = hexColor;
+          syncBlockHtml(activeBlockId, el);
+        }
+      }
+    }
+
+    function insertSymbolAtCursor(sym) {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0 && document.activeElement?.isContentEditable) {
+        document.execCommand('insertText', false, sym);
+      } else if (activeBlockId) {
+        const b = getActiveDoc().blocks.find(x => x.id === activeBlockId);
+        if (b && typeof b.html === 'string') {
+          b.html = (b.html === '&nbsp;' ? '' : b.html) + sym;
+          saveState();
+          renderPaginatedA4Sheets(b.id);
+        }
+      }
+    }
+
+    function insertBlockAfterActive(newBlock) {
+      const blocks = getActiveDoc().blocks;
+      const idx = blocks.findIndex(x => x.id === activeBlockId);
+      if (idx === -1) blocks.push(newBlock);
+      else blocks.splice(idx + 1, 0, newBlock);
+      activeBlockId = newBlock.id;
+      saveState();
+      renderPaginatedA4Sheets(newBlock.id);
+    }
+
+    function insertSpacerLine() {
+      insertBlockAfterActive({ id: 'sp-' + Date.now(), type: 'spacer', html: '&nbsp;' });
+    }
+
+    function deleteActiveLine() {
+      const blocks = getActiveDoc().blocks;
+      if (blocks.length <= 1) return;
+      const idx = blocks.findIndex(x => x.id === activeBlockId);
+      if (idx !== -1) {
+        blocks.splice(idx, 1);
+        activeBlockId = blocks[Math.max(0, idx - 1)]?.id || null;
+        saveState();
+        renderPaginatedA4Sheets(activeBlockId);
+      }
+    }
+
+    function insertVisualSplit() {
+      insertBlockAfterActive({
+        id: 'sp2-' + Date.now(),
+        type: 'split',
+        left: '<b>Constructive Program</b><br>• National Schools & Khadi',
+        right: '<b>Boycott Program</b><br>• Surrender Titles & Foreign Cloth'
+      });
+    }
+
+    function insertVisualFlowchart() {
+      insertBlockAfterActive({
+        id: 'fl-' + Date.now(),
+        type: 'flow',
+        steps: ['Step 1: Cause / Act', 'Step 2: Event / Leader', 'Step 3: Outcome']
+      });
+    }
+
+    function insertVisualVocab() {
+      insertBlockAfterActive({
+        id: 'vc-' + Date.now(),
+        type: 'line',
+        html: '<b>Word</b> (मराठी अर्थ) : Meaning · <b>Syn:</b> Synonym · <b>Ant:</b> Antonym'
+      });
+    }
+
+    function insertPageBreakNode() {
+      insertBlockAfterActive({ id: 'pb-' + Date.now(), type: 'pagebreak' });
+      insertBlockAfterActive({ id: 'h1-' + Date.now(), type: 'h1', html: 'New Page Topic Heading' });
+    }
+
+    function insertVisualTableGrid() {
+      const cCount = parseInt(document.getElementById('newTableCols').value, 10) || 4;
+      const rCount = parseInt(document.getElementById('newTableRows').value, 10) || 4;
+      const weights = cCount === 4 ? '0.42fr 1.1fr 0.68fr 2fr' : `repeat(${cCount}, minmax(0, 1fr))`;
+
+      const headCells = cCount === 4
+        ? ['No.', 'State / Topic', 'Year', 'Historical Significance & Shortcut']
+        : Array.from({ length: cCount }, (_, i) => `Heading ${i + 1}`);
+
+      insertBlockAfterActive({ id: 'th-' + Date.now(), type: 'thead', cols: weights, cells: headCells });
+      for (let r = 1; r <= rCount; r++) {
+        const rowCells = Array.from({ length: cCount }, (_, i) => i === 0 ? String(r) : 'Tap to type');
+        insertBlockAfterActive({ id: `tr-${Date.now()}-${r}`, type: 'trow', cols: weights, cells: rowCells });
+      }
+      closeModal('tableModal');
+    }
+
+    function processSmartPaste() {
+      const raw = document.getElementById('smartPasteInput').value;
+      if (!raw.trim()) return;
+      const replace = document.getElementById('pasteReplaceCheck').checked;
+      const newBlocks = convertRawTextToBlocks(raw);
+      const doc = getActiveDoc();
+      if (replace) doc.blocks = newBlocks;
+      else doc.blocks = doc.blocks.concat(newBlocks);
+      document.getElementById('smartPasteInput').value = '';
+      closeModal('pasteModal');
+      saveState();
+      renderPaginatedA4Sheets();
+    }
+
+    // ==================== IMAGE RESIZE & FLOW ====================
+    function handleImgUpload(e) {
+      const file = e.target.files[0]; if (!file) return;
+      const r = new FileReader();
+      r.onload = ev => {
+        const img = new Image();
+        img.onload = () => {
+          const c = document.createElement('canvas'), MAX = 600;
+          let w = img.width, h = img.height; if (w > MAX) { h = Math.round((h * MAX) / w); w = MAX; }
+          c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0, w, h);
+          pendingImgData = c.toDataURL('image/jpeg', 0.85);
+          const prev = document.getElementById('imgUploadPreview');
+          prev.src = pendingImgData; prev.classList.remove('hidden');
+        };
+        img.src = ev.target.result;
+      };
+      r.readAsDataURL(file);
+    }
+
+    function insertImageBlock() {
+      if (!pendingImgData) { alert('Pick an image first.'); return; }
+      const mode = document.getElementById('imgLayoutSelect').value || 'float';
+      const width = parseInt(document.getElementById('imgWidthSelect').value || '45', 10);
+      const imgId = 'img_' + Date.now();
+      if (!state.images) state.images = {};
+      state.images[imgId] = pendingImgData;
+      insertBlockAfterActive({ id: 'im-' + Date.now(), type: 'img', imgId, mode, width });
+      pendingImgData = null;
+      document.getElementById('imgFileInput').value = '';
+      document.getElementById('imgUploadPreview').classList.add('hidden');
+      closeModal('imgModal');
+    }
+
+    function selectImageNode(event, el) {
+      event.stopPropagation();
+      document.querySelectorAll('.img-node.selected').forEach(n => n.classList.remove('selected'));
+      el.classList.add('selected');
+    }
+    function clearSelectedImages() {
+      document.querySelectorAll('.img-node.selected').forEach(n => n.classList.remove('selected'));
+    }
+    function resizeImgBlock(blockId, newMode, newWidth) {
+      const b = getActiveDoc().blocks.find(x => x.id === blockId);
+      if (b) {
+        b.mode = newMode;
+        b.width = Math.min(100, Math.max(20, newWidth));
+        saveState();
+        renderPaginatedA4Sheets();
+      }
+    }
+    function deleteBlockById(blockId) {
+      const doc = getActiveDoc();
+      doc.blocks = doc.blocks.filter(x => x.id !== blockId);
+      saveState();
+      renderPaginatedA4Sheets();
+    }
+
+    // ==================== LAYOUT, FONTS & SIZING ====================
+    function stepFontSize(delta) {
+      let fs = parseFloat(state.settings.fontSize) || 12.5;
+      fs = Math.min(18, Math.max(8.5, +(fs + delta).toFixed(1)));
+      state.settings.fontSize = fs;
+      state.settings.lineHeight = Math.round(fs * 1.68);
+      applyLayoutSettings();
+    }
+    function stepLineGap(delta) {
+      let lh = parseInt(state.settings.lineHeight, 10) || 21;
+      lh = Math.min(34, Math.max(13, lh + delta));
+      state.settings.lineHeight = lh;
+      applyLayoutSettings();
+    }
+
+    function applyLayoutSettings() {
+      const pageSize = document.getElementById('pageSizeSelect').value;
+      const cols = document.getElementById('colSelect').value;
+      const fontFamily = document.getElementById('fontFamilySelect').value;
+      const tableDensity = document.getElementById('tableDensitySelect').value;
+      const h1Color = document.getElementById('h1ColorPicker').value;
+      const h2Color = document.getElementById('h2ColorPicker').value;
+      const fs = parseFloat(state.settings.fontSize) || 12.5;
+      const lh = parseInt(state.settings.lineHeight, 10) || 21;
+
+      document.documentElement.style.setProperty('--font-size', fs + 'px');
+      document.documentElement.style.setProperty('--line-h', lh + 'px');
+      document.documentElement.style.setProperty('--cols', cols);
+      document.documentElement.style.setProperty('--h1-color', h1Color);
+      document.documentElement.style.setProperty('--h2-color', h2Color);
+
+      if (tableDensity === 'micro') {
+        document.documentElement.style.setProperty('--table-scale', '0.78');
+        document.documentElement.style.setProperty('--table-pad', '0.5px 2.5px');
+      } else if (tableDensity === 'compact') {
+        document.documentElement.style.setProperty('--table-scale', '0.86');
+        document.documentElement.style.setProperty('--table-pad', '1.5px 3.5px');
+      } else {
+        document.documentElement.style.setProperty('--table-scale', '0.95');
+        document.documentElement.style.setProperty('--table-pad', '3px 5px');
+      }
+
+      const sizeInfo = PAGE_SIZES[pageSize] || PAGE_SIZES['a4-landscape'];
+      document.getElementById('dynamicPageRule').innerHTML = `@page { size: ${sizeInfo.css}; margin: 0; }`;
+      document.getElementById('fontSizeLabel').textContent = fs;
+      document.getElementById('lineHeightLabel').textContent = lh;
+
+      state.settings = { pageSize, cols, fontSize: fs, lineHeight: lh, tableDensity, fontFamily, h1Color, h2Color };
+      saveState();
+      renderPaginatedA4Sheets();
+    }
+
+    function initControlsFromState() {
+      const s = state.settings;
+      document.getElementById('pageSizeSelect').value = s.pageSize || 'a4-landscape';
+      document.getElementById('colSelect').value = s.cols || '3';
+      document.getElementById('fontFamilySelect').value = s.fontFamily || 'f-kalam';
+      document.getElementById('tableDensitySelect').value = s.tableDensity || 'compact';
+      document.getElementById('h1ColorPicker').value = s.h1Color || '#9f1239';
+      document.getElementById('h2ColorPicker').value = s.h2Color || '#1e3a8a';
+      renderDocList();
+      applyLayoutSettings();
+    }
+
+    // ==================== DIRECT FILE PDF DOWNLOAD ====================
+    async function downloadDirectPdf() {
+      const btn = document.getElementById('btnDownloadPdf');
+      const orig = btn.textContent;
+      btn.textContent = '⏳ Saving...';
+      btn.disabled = true;
+      clearSelectedImages();
+
+      try {
+        const sheets = Array.from(document.querySelectorAll('.page-sheet'));
+        const sizeInfo = PAGE_SIZES[state.settings.pageSize || 'a4-landscape'];
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({
+          orientation: sizeInfo.orient,
+          unit: 'px',
+          format: [sizeInfo.w, sizeInfo.h],
+          hotfixes: ['px_scaling']
+        });
+
+        for (let i = 0; i < sheets.length; i++) {
+          if (i > 0) pdf.addPage([sizeInfo.w, sizeInfo.h], sizeInfo.orient);
+          const canvas = await html2canvas(sheets[i], { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
+          pdf.addImage(canvas.toDataURL('image/jpeg', 0.96), 'JPEG', 0, 0, sizeInfo.w, sizeInfo.h);
+        }
+        const cleanName = getActiveDoc().title.replace(/[^a-z0-9]/gi, '_').slice(0, 30) || 'NoteCraft_Notes';
+        pdf.save(`${cleanName}.pdf`);
+      } catch (e) {
+        window.print();
+      } finally {
+        btn.textContent = orig;
+        btn.disabled = false;
+      }
+    }
+
+    // ==================== CHAPTERS & BACKUP ====================
+    function toggleNotebookDrawer() { document.getElementById('notebookDrawer').classList.toggle('-translate-x-full'); }
+    function renderDocList() {
+      document.getElementById('docList').innerHTML = state.docs.map(d => `
+        <div onclick="selectDoc('${d.id}')" class="cursor-pointer p-2.5 rounded-xl border text-xs font-bold truncate ${d.id === activeDocId ? 'bg-indigo-600/25 border-indigo-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-400'}">
+          📄 ${escapeHtml(d.title)}
+        </div>`).join('');
+    }
+    function selectDoc(id) { activeDocId = id; toggleNotebookDrawer(); renderDocList(); renderPaginatedA4Sheets(); }
+    function createNewDoc() {
+      const t = prompt('New Chapter Title:', 'History Chapter'); if (!t) return;
+      const nd = { id: 'doc-' + Date.now(), title: t.trim(), blocks: [{ id: 'h1-' + Date.now(), type: 'h1', html: escapeHtml(t.trim()) }, { id: 'ln-' + Date.now(), type: 'line', html: 'Tap here to start typing or use Smart Paste...' }] };
+      state.docs.unshift(nd); activeDocId = nd.id; saveState(); renderDocList(); renderPaginatedA4Sheets(); toggleNotebookDrawer();
+    }
+    function renameCurrentDoc() { const d = getActiveDoc(); const t = prompt('Rename Chapter:', d.title); if (t) { d.title = t.trim(); saveState(); renderDocList(); renderPaginatedA4Sheets(); } }
+    function deleteCurrentDoc() {
+      if (state.docs.length <= 1) { alert('Keep at least 1 chapter.'); return; }
+      if (confirm('Delete chapter?')) { state.docs = state.docs.filter(d => d.id !== activeDocId); activeDocId = state.docs[0].id; saveState(); renderDocList(); renderPaginatedA4Sheets(); }
+    }
+
+    function exportBackup() { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' })); a.download = 'NoteCraft_v4_Backup.json'; a.click(); }
+    function importBackup(e) {
+      const f = e.target.files[0]; if (!f) return; const r = new FileReader();
+      r.onload = ev => { try { const imp = JSON.parse(ev.target.result); if (imp.docs) { state = imp; activeDocId = state.docs[0].id; saveState(); initControlsFromState(); closeModal('backupModal'); } } catch (err) { alert('Invalid file'); } };
+      r.readAsText(f);
+    }
+    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+    window.addEventListener('load', () => {
+      initControlsFromState();
+      const b = document.getElementById('statusBadge');
+      if (b) { b.textContent = '✓ v4.0 Active'; b.className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold'; }
+    });
+  </script>
+</body>
+</html>
